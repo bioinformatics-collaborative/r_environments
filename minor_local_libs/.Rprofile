@@ -43,14 +43,43 @@ local( {
     if(interactive()) {
 	# Quietly load utils
         require(utils, quietly=TRUE)
-	# Prompt the user to make sure they want to install Bioconductor
-	warning("Prompting for Bioconductor Installation...\n", immediate.=TRUE, call.=FALSE)
-	if (askYesNo("Do you want to install Bioconductor?? [Y/N]")){
-    	    # Create the proper directories if they don't already exist
-	    if (!dir.exists(Sys.getenv("R_LIBS_USER"))) {
-	        dir.create(Sys.getenv("R_LIBS_USER"), recursive=TRUE)
-	    }    
-	    
+	# Create the proper directories if they don't already exist
+        if (!dir.exists(Sys.getenv("R_LIBS_USER"))) {
+            dir.create(Sys.getenv("R_LIBS_USER"), recursive=TRUE)
+        }
+	# Try to load various packages and then prompt the user to make sure 
+	# they want to install bioconductor, devtools, tidyverse, and/or packrat/miniCRAN
+	bioc_load <- try(library("BiocInstaller"), silent=TRUE)
+	devt_load <- try(library("devtools"), silent=TRUE)
+	tidy_load <- try(library("tidyverse"), silent=TRUE)
+	packrat_load <- try(library("packrat"), silent=TRUE)
+	miniCRAN_load <- try(library("miniCRAN") silent=TRUE)
+	
+	# Ask about Bioconductor
+	if (class(bioc_load) == "try-erro") {
+            warning("Prompting for Bioconductor Installation...\n", immediate.=TRUE, call.=FALSE)
+	    bioc_answr <- askYesNo("Do you want to install Bioconductor?? [Y/N]\n")
+	} else { bioc_answr = FALSE }
+	# Ask about devtools
+	if (class(devt_load) == "try-error") {
+	    warning("Prompting for Devtools Installation...\n", immediate.=TRUE, call.=FALSE)
+	    devt_answr <- askYesNo("Do you want to install devtools?? [Y/N]\n")
+	} else { devt_answr = FALSE }
+	# Ask about tidyverse
+	if (class(tidy_load) == "try-error") {
+	    warning("Prompting for Tidyverse Installation...\n", immediate.=TRUE, call.=FALSE)
+	    tidy_answr <- askYesNo("Do you want to install the tidyverse?? [Y/N]\n")
+	} else { tidy_answr = FALSE }
+	# Ask about packrat and miniCRAN
+	if ((class(packrat_load) == "try-error") | (class(miniCRAN_load) == "try-error")) {
+	    warning("Prompting for Reproducible Workflow Installation...\n", immediate.=TRUE, call.=FALSE)
+	    repr_answr <- askYesNo("Do you want to install packrat and miniCRAN?? [Y/N]\n")
+	} else { repr_answr = FALSE }
+	
+	# Begin installing what needs to be installed
+	# Install Bioconductor
+	if (bioc_answr)){
+    	    
 	    message("\n..................Attempting to Load Biocondcutor...................\n")
 	    # Try to load the Bioconductor Installer
 	    x <- try(library("BiocInstaller"), silent=TRUE)
@@ -79,7 +108,24 @@ local( {
 	    options(defaultPackages=c(getOption("defaultPackages"), "BiocInstaller"))
 	    # Add Bioconductor to the repos option
 	    options(repos = c(getOption('repos')["CRAN"], BiocInstaller:::biocinstallRepos()))
-        }  
+        }
+	# Install Devtools
+	if (devt_answr) {
+	    install.packages("devtools")
+	}
+	# Install the Tidyverse
+	if (tidy_answr) {
+	    install.packages("tidyverse")
+	}
+	# Install the Reproducible Workflow (packrat/miniCRAN)
+	if (repr_answr) {
+	    if (devt_answr) {
+	    	install.packages("devtools")
+	    }
+	    
+	    devtools::install_github("RevolutionAnalytics/miniCRAN")
+	    devtools::install_github("rstudio/packrat")
+	}
     }
 })
 
