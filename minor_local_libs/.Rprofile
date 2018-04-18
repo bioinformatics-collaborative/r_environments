@@ -14,14 +14,20 @@
 # R - 3.4.3 is compiled with intel
 # R - 3.4.4 is compiled with gcc
 
-#Sys.setenv("R_LIBS"=Sys.getenv("R_LIBS_USER"))
-#options(defaultPackages=c(getOption("defaultPackages", "BiocInstaller")))
+# Set repositories for CRAN
+local({
+  r <- getOption("repos")
+  r["CRAN"] <- "https://cran.rstudio.com/"
+  r["CRANextra"] <- "https://mirrors.nics.utk.edu/cran/"
+  options(repos=r)
+})
+
 
 askYesNo <- function(msg) {
     ansr <- readline(prompt=msg)
     ansr <- tolower(ansr)
     acceptable_ansr <- c("yes", "no", "n", "y")
-    while(!any(grep(ansr, acceptable_ansr, fixed=TRUE))) {
+    while(!any(grep(ansr, acceptable_ansr, fixed=TRUE)) | ansr == "") {
     	ansr <- readline(prompt=msg)
 	ansr <- tolower(ansr)
     }
@@ -34,106 +40,95 @@ askYesNo <- function(msg) {
     return(ret_log)
 }
 
+standard_pkg_list <- list(BiocInstaller="Bioconductor", devtools="Devtools", tidyverse="Tidyverse")
+reproducible_wf_pkg_list <- list(packrat="Packrat", miniCRAN="MiniCRAN")
 
+checker_for_packages <-function(pkgs=list()) {
+  # Format package names for output
+  pkg_checklist <- list()
+  for (pkg in names(pkgs)) {
+    fmt_pkg_name <- pkgs[[pkg]]
+    load_msg <- sprintf("\n..................Attempting to Load %s...................\n", fmt_pkg_name)
+    message(load_msg)
+    pkg_is_available <- require(pkg, quietly = TRUE, character.only = TRUE)
+    if (!pkg_is_available) {
+      warn_msg <- sprintf("Prompting for %s Installation...\n", fmt_pkg_name)
+      prompt_msg <- sprintf("Do you want to install %s??? [Y/N]\n", fmt_pkg_name)
+      
+      warning(warn_msg, immediate.=TRUE, call.=FALSE)
+      answer <- askYesNo(prompt_msg)
+    } else { 
+      answer = FALSE 
+      msg <- sprintf("\n.................%s is installed!..................\n", fmt_pkg_name)
+      message(msg)
+    }
+    pkg_checklist[[pkg]] <- answer
+  }
+  return(pkg_checklist)
+}
+
+installer_for_packages <- function(lib, pkgs=list()) {
+  for (pkg in names(pkgs)) {
+    fmt_pkg_name <- pkgs[[pkg]]
+    message("")
+    warn_msg <- sprintf("Installing %s from %s/.Rprofile.\n into %s", fmt_pkg_name, getwd(), lib)
+    warning(warn_msg, immediate.=TRUE, call.=FALSE)
+    if (pkg == "BiocInstaller") {
+      warning("\nBioconductor will also install several other packages.\n")
+      installer_for_bioconductor(lib = lib)
+    } else if (pkg %in% names(reproducible_wf_pkg_list)) {
+      message("%s is in the list of Reproducible Workflow Packages and requires an installation with devtools.")
+      install.packages("devtools")
+      if (pkg == "miniCRAN") {
+        devtools::install_github("RevolutionAnalytics/miniCRAN")
+      } else if (pkg == "packrat") {
+        devtools::install_github("rstudio/packrat")
+      } 
+    } else {
+      install.packages(pkg)
+      }
+    install_msg <- sprintf("\n..............%s was successfully installed!!...............\n", fmt_pkg_name)
+    message(install_msg)
+  }
+}
+
+installer_for_bioconductor <- function(lib, download=FALSE) {
+  # Option for Downloading the biocLite.R script manually
+  if (download) {
+    system2("rm", args=c("~/biocLite.R"))
+    system2("wget", args=c("-O", "~/biocLite.R", "http://bioconductor.org/biocLite.R"), wait=TRUE)
+  } else {
+    # Install Bioconductor
+    source("https://bioconductor.org/biocLite.R")
+    message("\n..............Bioconductor was successfully installed...............\n")
+    # Add BiocInstaller to the defaultPackages option
+    options(defaultPackages=c(getOption("defaultPackages"), "BiocInstaller"))
+    # Add Bioconductor to the repos option
+    r <- getOption('repos')["CRAN"]
+    r <- c(r, BiocInstaller::biocinstallRepos())
+    options(repos = r)
+  }
+}
 
 local( {
 # Only execute on interactive session in a local environment
 # This prevents infinite looping
-    
-    if(interactive()) {
-	# Quietly load utils
-        require(utils, quietly=TRUE)
-	# Create the proper directories if they don't already exist
-        if (!dir.exists(Sys.getenv("R_LIBS_USER"))) {
-            dir.create(Sys.getenv("R_LIBS_USER"), recursive=TRUE)
-        }
-	# Try to load various packages and then prompt the user to make sure 
-	# they want to install bioconductor, devtools, tidyverse, and/or packrat/miniCRAN
-	bioc_load <- try(library("BiocInstaller"), silent=TRUE)
-	devt_load <- try(library("devtools"), silent=TRUE)
-	tidy_load <- try(library("tidyverse"), silent=TRUE)
-	packrat_load <- try(library("packrat"), silent=TRUE)
-	miniCRAN_load <- try(library("miniCRAN") silent=TRUE)
-	
-	# Ask about Bioconductor
-	if (class(bioc_load) == "try-erro") {
-            warning("Prompting for Bioconductor Installation...\n", immediate.=TRUE, call.=FALSE)
-	    bioc_answr <- askYesNo("Do you want to install Bioconductor?? [Y/N]\n")
-	} else { bioc_answr = FALSE }
-	# Ask about devtools
-	if (class(devt_load) == "try-error") {
-	    warning("Prompting for Devtools Installation...\n", immediate.=TRUE, call.=FALSE)
-	    devt_answr <- askYesNo("Do you want to install devtools?? [Y/N]\n")
-	} else { devt_answr = FALSE }
-	# Ask about tidyverse
-	if (class(tidy_load) == "try-error") {
-	    warning("Prompting for Tidyverse Installation...\n", immediate.=TRUE, call.=FALSE)
-	    tidy_answr <- askYesNo("Do you want to install the tidyverse?? [Y/N]\n")
-	} else { tidy_answr = FALSE }
-	# Ask about packrat and miniCRAN
-	if ((class(packrat_load) == "try-error") | (class(miniCRAN_load) == "try-error")) {
-	    warning("Prompting for Reproducible Workflow Installation...\n", immediate.=TRUE, call.=FALSE)
-	    repr_answr <- askYesNo("Do you want to install packrat and miniCRAN?? [Y/N]\n")
-	} else { repr_answr = FALSE }
-	
-	# Begin installing what needs to be installed
-	# Install Bioconductor
-	if (bioc_answr)){
-    	    
-	    message("\n..................Attempting to Load Biocondcutor...................\n")
-	    # Try to load the Bioconductor Installer
-	    x <- try(library("BiocInstaller"), silent=TRUE)
-	    # If there's an error then Bioconductor hasn't been installed
-	    if(class(x) == "try-error") { 
-	        # Add the user library to .libPaths so Bioconductor installs properly
-	    	.libPaths(Sys.getenv("R_LIBS_USER"))
-		
-	    	# **********************************************************
-	    	# Options for Downloading the biocLite.R script manually
-	    	#system2("rm", args=c("~/biocLite.R"))
-	    	#system2("wget", args=c("-O", "~/biocLite.R", "http://bioconductor.org/biocLite.R"), wait=TRUE)
-	    	# **********************************************************
-
-	    	# Tell the user what's happening
-	    	msg <- sprintf("Installing Bioconductor from %s/.Rprofile.\n", getwd())
-		message("")
-	    	warning(msg, immediate.=TRUE, call.=FALSE)
-	    	# Install Bioconductor
-	    	source("https://bioconductor.org/biocLite.R")
-		message("\n..............Bioconductor was successfully installed...............\n")
-	    } else {
-	    	message("\n.................Bioconductor is already installed..................\n")
-	    }
-	    # Add BiocInstaller to the defaultPackages option
-	    options(defaultPackages=c(getOption("defaultPackages"), "BiocInstaller"))
-	    # Add Bioconductor to the repos option
-	    options(repos = c(getOption('repos')["CRAN"], BiocInstaller:::biocinstallRepos()))
-        }
-	# Install Devtools
-	if (devt_answr) {
-	    install.packages("devtools")
-	}
-	# Install the Tidyverse
-	if (tidy_answr) {
-	    install.packages("tidyverse")
-	}
-	# Install the Reproducible Workflow (packrat/miniCRAN)
-	if (repr_answr) {
-	    if (devt_answr) {
-	    	install.packages("devtools")
-	    }
-	    
-	    devtools::install_github("RevolutionAnalytics/miniCRAN")
-	    devtools::install_github("rstudio/packrat")
-	}
+  if(interactive()) {
+    # Quietly load utils, append the libPaths, and create the proper directories if they don't already exist
+    require(utils, quietly=TRUE)
+    .libPaths(Sys.getenv("R_LIBS_USER"))
+    if (!dir.exists(Sys.getenv("R_LIBS_USER"))) {
+      dir.create(Sys.getenv("R_LIBS_USER"), recursive=TRUE)
     }
-})
-
-# **********************************************************
-# Remove the biocLite.R script from manual installation
-#system2("rm", args="~/biocLite.R")
-# **********************************************************
-
-# Make sure that bioconductors installation repositories are added
-#BiocInstaller::biocLite()
-
+    # Check to see if the any packages from the package lists are installed
+    std_pkg_checklist <- checker_for_packages(standard_pkg_list)
+    rep_workflow_checklist <- checker_for_packages(reproducible_wf_pkg_list)
+    checklist <- c(std_pkg_checklist, rep_workflow_checklist)
+    # Install packages that are required by the user
+    pkgs <- c(standard_pkg_list, reproducible_wf_pkg_list)
+    pkgs_to_install <- pkgs[!checklist == FALSE]
+    installer_for_packages(lib=Sys.getenv("R_LIBS_USER"), pkgs = pkgs_to_install)
+    
+  	} # interactive
+  }
+) # local
